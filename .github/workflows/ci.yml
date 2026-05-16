@@ -2,55 +2,51 @@ name: CI Pipeline
 
 on:
   push:
-    branches: [test/main]
+    branches:
+      - test/main
 
 permissions:
   contents: read
   security-events: write
 
 env:
-  REGISTRY: docker.io
   BACKEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/skillpulse-backend
   FRONTEND_IMAGE: ${{ secrets.DOCKERHUB_USERNAME }}/skillpulse-frontend
 
 jobs:
 
   # =========================
-  # Backend Testing
+  # Backend Test
   # =========================
   backend-test:
     name: Backend Test
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - uses: actions/setup-go@v5
         with:
-          go-version: "1.24"
+          go-version: "1.26"
           cache: true
 
-      - name: Run Go Test
+      - name: Run Go Tests
         working-directory: ./backend
         run: |
           go mod tidy
           go test ./...
 
   # =========================
-  # Secret Scanning
+  # Secret Scan
   # =========================
-  gitleaks-scan:
+  gitleaks:
     name: Gitleaks Scan
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -58,81 +54,97 @@ jobs:
   # Backend Build
   # =========================
   backend-build:
-    name: Backend Docker Build
+    name: Backend Build
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Docker Login
-        uses: docker/login-action@v3
-        if: ${{ vars.DEPLOY_ENABLED == 'true' }}
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and Push Backend
+      - name: Build Backend Image
         uses: docker/build-push-action@v6
         with:
           context: ./backend
-          push: ${{ vars.DEPLOY_ENABLED == 'true' }}
+          push: false
+          load: true
           tags: |
-            ${{ env.BACKEND_IMAGE }}:latest
             ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Save Backend Image
+        run: |
+          docker save ${{ env.BACKEND_IMAGE }}:${{ github.sha }} -o backend.tar
+
+      - name: Upload Backend Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-image
+          path: backend.tar
 
   # =========================
   # Frontend Build
   # =========================
   frontend-build:
-    name: Frontend Docker Build
+    name: Frontend Build
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v3
 
-      - name: Docker Login
-        uses: docker/login-action@v3
-        if: ${{ vars.DEPLOY_ENABLED == 'true' }}
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and Push Frontend
+      - name: Build Frontend Image
         uses: docker/build-push-action@v6
         with:
           context: ./frontend
-          push: ${{ vars.DEPLOY_ENABLED == 'true' }}
+          push: false
+          load: true
           tags: |
-            ${{ env.FRONTEND_IMAGE }}:latest
             ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Save Frontend Image
+        run: |
+          docker save ${{ env.FRONTEND_IMAGE }}:${{ github.sha }} -o frontend.tar
+
+      - name: Upload Frontend Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-image
+          path: frontend.tar
+
   # =========================
-  # Trivy Security Scan
+  # Trivy Scan
   # =========================
   trivy-scan:
-    name: Trivy Vulnerability Scan
+    name: Trivy Security Scan
     runs-on: ubuntu-latest
+
     needs:
       - backend-build
       - frontend-build
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - name: Download Backend Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-image
 
-      - name: Run Trivy Scan Backend
+      - name: Download Frontend Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-image
+
+      - name: Load Backend Image
+        run: docker load -i backend.tar
+
+      - name: Load Frontend Image
+        run: docker load -i frontend.tar
+
+      - name: Trivy Backend Scan
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
@@ -140,7 +152,7 @@ jobs:
           exit-code: 0
           severity: CRITICAL,HIGH
 
-      - name: Run Trivy Scan Frontend
+      - name: Trivy Frontend Scan
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
@@ -149,7 +161,50 @@ jobs:
           severity: CRITICAL,HIGH
 
   # =========================
-  # Pipeline Summary
+  # Push Docker Images
+  # =========================
+  docker-push:
+    name: Push Docker Images
+    runs-on: ubuntu-latest
+
+    needs:
+      - trivy-scan
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend-image
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-image
+
+      - name: Load Backend Image
+        run: docker load -i backend.tar
+
+      - name: Load Frontend Image
+        run: docker load -i frontend.tar
+
+      - name: Docker Login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Push Backend Image
+        run: |
+          docker push ${{ env.BACKEND_IMAGE }}:${{ github.sha }}
+          docker tag ${{ env.BACKEND_IMAGE }}:${{ github.sha }} ${{ env.BACKEND_IMAGE }}:latest
+          docker push ${{ env.BACKEND_IMAGE }}:latest
+
+      - name: Push Frontend Image
+        run: |
+          docker push ${{ env.FRONTEND_IMAGE }}:${{ github.sha }}
+          docker tag ${{ env.FRONTEND_IMAGE }}:${{ github.sha }} ${{ env.FRONTEND_IMAGE }}:latest
+          docker push ${{ env.FRONTEND_IMAGE }}:latest
+
+  # =========================
+  # Summary
   # =========================
   summary:
     name: Pipeline Summary
@@ -157,15 +212,17 @@ jobs:
 
     needs:
       - backend-test
-      - gitleaks-scan
+      - gitleaks
       - backend-build
       - frontend-build
       - trivy-scan
+      - docker-push
 
     steps:
-      - name: Pipeline Complete
+      - name: Summary
         run: |
           echo "CI Pipeline Completed Successfully"
-          echo "Backend + Frontend built in parallel"
-          echo "Security scans completed"
-          echo "Docker layer caching enabled"
+          echo "Images scanned before push"
+          echo "Docker cache enabled"
+          echo "Parallel jobs enabled"
+          echo "DevSecOps implemented"
