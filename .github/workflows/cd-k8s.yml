@@ -3,6 +3,8 @@ name: Kubernetes CD
 on:
   workflow_run:
     workflows: ["CI Pipeline"]
+    branches:
+      - test/main
     types:
       - completed
 
