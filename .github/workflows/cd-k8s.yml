@@ -1,44 +1,70 @@
-name: CD (kind cluster — manifest bump)
+name: Kubernetes CD
 
 on:
   workflow_run:
-    workflows: ["CI"]
-    types: [completed]
-    branches: [main]
+    workflows: ["CI Pipeline"]
+    types:
+      - completed
 
 jobs:
-  bump-manifests:
-    if: ${{ github.event.workflow_run.conclusion == 'success' && vars.DEPLOY_ENABLED == 'true' }}
+  deploy-to-k8s:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
+
     steps:
-      - uses: actions/checkout@v4
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup kubectl
+        uses: azure/setup-kubectl@v4
         with:
-          ref: main
+          version: latest
 
-      - name: Pin backend + frontend images to commit SHA
-        env:
-          SHA: ${{ github.event.workflow_run.head_sha }}
-          DOCKER_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+      - name: Configure kubeconfig
         run: |
-          if [ -z "$DOCKER_USER" ]; then
-            echo "ERROR: DOCKERHUB_USERNAME secret is not set."
-            exit 1
-          fi
-          sed -i "s|image: ${DOCKER_USER}/skillpulse-backend:.*|image: ${DOCKER_USER}/skillpulse-backend:${SHA}|"  k8s/20-backend.yaml
-          sed -i "s|image: ${DOCKER_USER}/skillpulse-frontend:.*|image: ${DOCKER_USER}/skillpulse-frontend:${SHA}|" k8s/30-frontend.yaml
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
 
-      - name: Commit + push if changed
-        env:
-          SHA: ${{ github.event.workflow_run.head_sha }}
+      - name: Verify Kubernetes Clusterz
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet; then
-            echo "Manifests already pinned to ${SHA}; nothing to commit."
-            exit 0
-          fi
-          git add k8s/20-backend.yaml k8s/30-frontend.yaml
-          git commit -m "deploy: pin backend+frontend to ${SHA:0:7}"
-          git push
+          kubectl get nodes
+
+      - name: Update Backend Image
+        run: |
+          sed -i "s|image: .*skillpulse-backend.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/skillpulse-backend:${{ github.event.workflow_run.head_sha }}|g" k8s/20-backend.yaml
+
+      - name: Update Frontend Image
+        run: |
+          sed -i "s|image: .*skillpulse-frontend.*|image: ${{ secrets.DOCKERHUB_USERNAME }}/skillpulse-frontend:${{ github.event.workflow_run.head_sha }}|g" k8s/30-frontend.yaml
+
+      - name: Deploy Namespace
+        run: |
+          kubectl apply -f k8s/00-namespace.yaml
+
+      - name: Deploy MySQL
+        run: |
+          kubectl apply -f k8s/10-mysql.yaml
+
+      - name: Deploy Backend
+        run: |
+          kubectl apply -f k8s/20-backend.yaml
+
+      - name: Deploy Frontend
+        run: |
+          kubectl apply -f k8s/30-frontend.yaml
+
+      - name: Restart Deployments
+        run: |
+          kubectl rollout restart deployment backend -n skillpulse
+          kubectl rollout restart deployment frontend -n skillpulse
+
+      - name: Verify Rollout
+        run: |
+          kubectl rollout status deployment/backend -n skillpulse
+          kubectl rollout status deployment/frontend -n skillpulse
+
+      - name: Get Pods
+        run: |
+          kubectl get pods -n skillpulse
