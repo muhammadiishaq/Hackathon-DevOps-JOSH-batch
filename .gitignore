@@ -11,6 +11,11 @@ Thumbs.db
 .env
 .env.local
 
+#terraform
+terraform/.terraform/
+.terraform.lock.hcl
+
+
 # Logs
 *.log
 
