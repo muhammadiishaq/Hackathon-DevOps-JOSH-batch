@@ -1,4 +1,7 @@
-## 🚀 SkillPulse DevOps Project (Hackathon - Batch 10)..
+# 🚀 SkillPulse DevOps Project (Hackathon - Batch 10)..
+![Project Screenshot](./Screenshot-Project/web.png)
+
+## Project Overview...
 
 This project is part of the DevOps Hackathon (Batch 10) organized under the Zero to Hero program, mentored by **Shubham Bhaiya**. The hackathon focuses on building real-world DevOps skills by implementing complete CI/CD pipelines, containerization, Kubernetes deployment, and monitoring in a production-like environment.
 
@@ -13,7 +16,7 @@ The goal of this hackathon is to simulate real industry workflows by:
 - Setting up monitoring using Prometheus & Grafana
 - Following DevOps best practices (automation, scalability, observability)
 
-## 💡 Project Overview
+## 💡 Project Structure..
 
 SkillPulse is a full-stack web application built using:
 
@@ -44,7 +47,8 @@ Developer pushes code to GitHub
 - Grafana visualizes dashboards
 - Loki collects logs
 
-
+![Project Screenshot](./Screenshot-Project/all.png)
+![Project Screenshot](./Screenshot-Project/ci.png)
 ### 🚀 Deployment (Simple Steps).. 
 
 1️⃣ Clone Repository
@@ -74,6 +78,7 @@ Use NodePort / LoadBalancer IP from:
 ```
 kubectl get svc -n skillpulse
 ```
+![Project Screenshot](./Screenshot-Project/web.png)
 
 ### 📊 Monitoring Stack
 - Prometheus → Metrics collection
@@ -123,6 +128,9 @@ Username: admin
 Password:
 kubectl get secret monitoring-grafana -n monitoring -o jsonpath="{.data.admin-password}" | base64 --decode
 ```
+
+![Project Screenshot](./Screenshot-Project/m1.png)
+![Project Screenshot](./Screenshot-Project/m2.png)
 
 ### 🛠️ Infrastructure (Terraform)
 
@@ -219,6 +227,9 @@ Check files inside folder
 ```
 cd .gtihub/workflow
 ```
+![Project Screenshot](./Screenshot-Project/all.png)
+![Project Screenshot](./Screenshot-Project/D-hub.png)
+
 
 ### 🤝 Contribution
 
