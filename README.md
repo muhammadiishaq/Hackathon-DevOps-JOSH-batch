@@ -1,4 +1,4 @@
-# 🚀 SkillPulse DevOps Project (Hackathon - Batch 10)..
+# 🚀 SkillPulse DevOps Project (Hackathon - Batch 10)
 ![Project Screenshot](./Screenshot-Project/web.png)
 
 ## Project Overview...
